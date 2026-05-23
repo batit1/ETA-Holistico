@@ -7,7 +7,7 @@ NEXTPARK de predicción de aparcamiento para calcular un ETA holístico:
     ETA_total = T_conducción + T_maniobra_aparcamiento + T_caminata_a_pie
  
 Autores: Next Mobility Solutions
-Proyecto: PERTE VEC — Expediente VE2-010000-2023-75
+Proyecto: ETA HOLISTICO — Expediente VE2-010000-2023-75
 """
  
 from __future__ import annotations
@@ -24,9 +24,8 @@ import pandas as pd
 from geopy.distance import geodesic
 from shapely.geometry import MultiPoint
  
-# ---------------------------------------------------------------------------
 # Logging
-# ---------------------------------------------------------------------------
+# 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
@@ -35,9 +34,7 @@ logging.basicConfig(
 logger = logging.getLogger("NextParkIntegration")
  
  
-# ---------------------------------------------------------------------------
 # Dataclasses de resultado
-# ---------------------------------------------------------------------------
  
 @dataclass
 class TrafficPrediction:
@@ -86,9 +83,7 @@ class ETAHolistico:
         )
  
  
-# ---------------------------------------------------------------------------
 # Módulo 1: Predicción de tráfico (interfaz con el modelo LSTM de Laura)
-# ---------------------------------------------------------------------------
  
 class TrafficPredictor:
     """
@@ -264,9 +259,7 @@ class TrafficPredictor:
         )
  
  
-# ---------------------------------------------------------------------------
 # Módulo 2: Señal de aparcamiento NEXTPARK
-# ---------------------------------------------------------------------------
  
 class NextParkPredictor:
     """
@@ -323,9 +316,7 @@ class NextParkPredictor:
         self.pf_folder = pf_folder
         self._cache_pf: dict[str, pd.DataFrame] = {}
  
-    # ------------------------------------------------------------------
     # API pública
-    # ------------------------------------------------------------------
  
     def generar_senal(
         self,
@@ -412,9 +403,7 @@ class NextParkPredictor:
             confianza=confianza,
         )
  
-    # ------------------------------------------------------------------
     # Features del modelo
-    # ------------------------------------------------------------------
  
     def _ventana(
         self, df: pd.DataFrame, t_ref: datetime, minutos: int
@@ -530,9 +519,7 @@ class NextParkPredictor:
         )
         return float(np.exp(log_pred))
  
-    # ------------------------------------------------------------------
     # Zonas frecuentes
-    # ------------------------------------------------------------------
  
     def _cargar_puntos_frecuentes(self, conductor_id: str) -> pd.DataFrame:
         """Carga los puntos frecuentes de un conductor con caché en memoria."""
@@ -567,9 +554,7 @@ class NextParkPredictor:
         )
         return bool(mask.any())
  
-    # ------------------------------------------------------------------
     # Evaluación de confianza
-    # ------------------------------------------------------------------
  
     def _evaluar_confianza(
         self,
@@ -596,9 +581,7 @@ class NextParkPredictor:
         return "media"
  
  
-# ---------------------------------------------------------------------------
 # Módulo 3: Motor de integración — ETA Holístico
-# ---------------------------------------------------------------------------
  
 @dataclass
 class OpcionParking:
@@ -788,14 +771,12 @@ class ETAEngine:
         return float(tiempo_min), float(dist_m)
  
  
-# ---------------------------------------------------------------------------
 # Ejemplo de uso
-# ---------------------------------------------------------------------------
  
 if __name__ == "__main__":
     import json
  
-    logger.info("=== Iniciando motor de integración PERTE VEC ===")
+    logger.info("=== Iniciando motor de integración ETA HOLISTICO ===")
  
     # Inicializar predictores
     # En producción: TrafficPredictor(model_path="./modelos/lstm_cíclico.h5")
@@ -837,7 +818,7 @@ if __name__ == "__main__":
  
     # ---- Mostrar resultados ----
     print("\n" + "=" * 55)
-    print("  RESULTADO — ETA HOLÍSTICO PERTE VEC")
+    print("  RESULTADO — ETA HOLÍSTICO ETA HOLISTICO")
     print("=" * 55)
  
     if not resultados:
@@ -858,3 +839,866 @@ if __name__ == "__main__":
               f"({mejor.eta_total_min:.1f} min)")
  
     print("=" * 55 + "\n")
+ 
+ 
+# Módulo 4: Indicadores de experiencia de usuario (UX)
+ 
+from enum import Enum
+ 
+ 
+class SemaforoParkingColor(Enum):
+    """
+    Semáforo de dificultad de aparcamiento basado en el tiempo estimado
+    hasta encontrar plaza (time_to_park_seg de NEXTPARK).
+ 
+    Umbrales acordados con Next Mobility Solutions:
+        VERDE    < 10 min  → Aparcamiento fácil
+        AMARILLO 10-30 min → Aparcamiento medio
+        ROJO     > 30 min  → Dificultad para aparcar
+    """
+    VERDE    = "🟢"
+    AMARILLO = "🟡"
+    ROJO     = "🔴"
+ 
+ 
+class SemaforoTraficoConductor(Enum):
+    """
+    Semáforo de congestión de tráfico basado en la intensidad predicha
+    por el modelo LSTM.
+ 
+    Umbrales basados en el nivel de servicio del Ayuntamiento de Madrid:
+        VERDE    < 800 veh/h   → Tráfico fluido
+        AMARILLO 800-1500 veh/h → Tráfico moderado
+        ROJO     > 1500 veh/h  → Congestión
+    """
+    VERDE    = "🟢"
+    AMARILLO = "🟡"
+    ROJO     = "🔴"
+ 
+ 
+class NivelConfianzaColor(Enum):
+    """
+    Indicador visual del nivel de confianza de la predicción NEXTPARK.
+    """
+    ALTA   = "✅"
+    MEDIA  = "⚠️"
+    BAJA   = "❌"
+ 
+ 
+@dataclass
+class IndicadoresUX:
+    """
+    Conjunto completo de indicadores de experiencia de usuario.
+    Diseñado para ser consumido directamente por la app móvil / CarPlay.
+    """
+    # --- Semáforos ---
+    semaforo_parking: SemaforoParkingColor
+    semaforo_trafico: SemaforoTraficoConductor
+    confianza_prediccion: NivelConfianzaColor
+ 
+    # --- Contadores ---
+    tiempo_parking_min: float       # Contador inverso: tiempo hasta aparcar
+    eta_total_min: float            # ETA holístico total
+    distancia_caminata_m: float     # Metros a pie desde el parking al destino
+ 
+    # --- Recomendación ---
+    parking_recomendado: str        # Nombre del parking óptimo
+    parking_ocupacion_pct: float    # % ocupación del parking recomendado
+ 
+    # --- Alerta de zona frecuente ---
+    zona_frecuente: bool            # True si el conductor está en una zona habitual
+ 
+    def resumen_usuario(self) -> str:
+        """
+        Texto de resumen para mostrar al usuario en la app.
+        Formato optimizado para pantalla de coche (CarPlay).
+        """
+        lineas = [
+            f"╔══════════════════════════════════════╗",
+            f"  NEXT MOBILITY — Asistente de Ruta",
+            f"══════════════════════════════════════",
+            f"",
+            f"  TRÁFICO          {self.semaforo_trafico.value}  ETA conducción incluido",
+            f"  APARCAMIENTO     {self.semaforo_parking.value}  {self.tiempo_parking_min:.0f} min estimados",
+            f"  CONFIANZA        {self.confianza_prediccion.value}  Predicción {self._confianza_texto()}",
+            f"",
+            f"  ─────────────────────────────────────",
+            f"  📍 Recomendado:  {self.parking_recomendado}",
+            f"  🅿️  Ocupación:    {self.parking_ocupacion_pct:.0f}%",
+            f"  🚶 A pie:        {self.distancia_caminata_m:.0f} m hasta tu destino",
+            f"  ⏱️  ETA total:    {self.eta_total_min:.0f} min",
+        ]
+ 
+        if self.zona_frecuente:
+            lineas.append(f"")
+            lineas.append(f"  ℹ️  Zona habitual detectada")
+ 
+        lineas.append(f"╚══════════════════════════════════════╝")
+        return "\n".join(lineas)
+ 
+    def _confianza_texto(self) -> str:
+        mapping = {
+            NivelConfianzaColor.ALTA:  "alta",
+            NivelConfianzaColor.MEDIA: "media",
+            NivelConfianzaColor.BAJA:  "baja",
+        }
+        return mapping[self.confianza_prediccion]
+ 
+ 
+def calcular_semaforo_parking(time_to_park_seg: float) -> SemaforoParkingColor:
+    """
+    Calcula el color del semáforo de aparcamiento.
+ 
+    Args:
+        time_to_park_seg: Tiempo estimado hasta aparcar en segundos (NEXTPARK).
+ 
+    Returns:
+        SemaforoParkingColor según los umbrales definidos.
+    """
+    minutos = time_to_park_seg / 60
+    if minutos < 10:
+        return SemaforoParkingColor.VERDE
+    elif minutos <= 30:
+        return SemaforoParkingColor.AMARILLO
+    else:
+        return SemaforoParkingColor.ROJO
+ 
+ 
+def calcular_semaforo_trafico(intensidad_veh_hora: float) -> SemaforoTraficoConductor:
+    """
+    Calcula el color del semáforo de tráfico.
+ 
+    Args:
+        intensidad_veh_hora: Intensidad predicha por el modelo LSTM (veh/hora).
+ 
+    Returns:
+        SemaforoTraficoConductor según el nivel de servicio.
+    """
+    if intensidad_veh_hora < 800:
+        return SemaforoTraficoConductor.VERDE
+    elif intensidad_veh_hora <= 1500:
+        return SemaforoTraficoConductor.AMARILLO
+    else:
+        return SemaforoTraficoConductor.ROJO
+ 
+ 
+def calcular_confianza_color(confianza: str) -> NivelConfianzaColor:
+    """Convierte el texto de confianza de NEXTPARK en un indicador visual."""
+    mapping = {
+        "alta":  NivelConfianzaColor.ALTA,
+        "media": NivelConfianzaColor.MEDIA,
+        "baja":  NivelConfianzaColor.BAJA,
+    }
+    return mapping.get(confianza, NivelConfianzaColor.BAJA)
+ 
+ 
+def generar_indicadores_ux(
+    traffic_pred: TrafficPrediction,
+    parking_signal: ParkingSignal,
+    mejor_eta: ETAHolistico,
+) -> IndicadoresUX:
+    """
+    Genera el conjunto completo de indicadores UX a partir de las predicciones.
+ 
+    Args:
+        traffic_pred:   Resultado del modelo LSTM de tráfico.
+        parking_signal: Señal de aparcamiento de NEXTPARK.
+        mejor_eta:      Mejor opción de ETA holístico calculada.
+ 
+    Returns:
+        IndicadoresUX listo para consumir por la app móvil / CarPlay.
+    """
+    return IndicadoresUX(
+        semaforo_parking=calcular_semaforo_parking(parking_signal.time_to_park_seg),
+        semaforo_trafico=calcular_semaforo_trafico(traffic_pred.predicted_intensity),
+        confianza_prediccion=calcular_confianza_color(parking_signal.confianza),
+        tiempo_parking_min=parking_signal.time_to_park_seg / 60,
+        eta_total_min=mejor_eta.eta_total_min,
+        distancia_caminata_m=mejor_eta.distancia_caminata_m,
+        parking_recomendado=mejor_eta.parking_nombre,
+        parking_ocupacion_pct=mejor_eta.parking_ocupacion * 100,
+        zona_frecuente=parking_signal.zona_frecuente,
+    )
+ 
+ 
+# Demo completa con indicadores UX
+ 
+def demo_completa():
+    """
+    Ejecuta una demo completa del motor con indicadores UX.
+    Simula tres escenarios: hora valle, hora punta y aparcamiento difícil.
+    """
+    traffic_predictor  = TrafficPredictor(model_path=None)
+    nextpark_predictor = NextParkPredictor(pf_folder="./pf")
+    engine = ETAEngine(
+        traffic_predictor=traffic_predictor,
+        nextpark_predictor=nextpark_predictor,
+    )
+ 
+    escenarios = [
+        {
+            "nombre": "HORA VALLE (10:15h)",
+            "hora": 10,
+            "time_to_park_override": 412,   # ~7 min → VERDE
+        },
+        {
+            "nombre": "HORA PUNTA (08:30h)",
+            "hora": 8,
+            "time_to_park_override": 1020,  # ~17 min → AMARILLO
+        },
+        {
+            "nombre": "ZONA SATURADA (19:00h)",
+            "hora": 19,
+            "time_to_park_override": 2100,  # ~35 min → ROJO
+        },
+    ]
+ 
+    ahora = datetime.now()
+    historial_viaje = pd.DataFrame({
+        "IdCliente":  ["P001"] * 6,
+        "Latitud":    [40.418, 40.417, 40.416, 40.416, 40.415, 40.415],
+        "Longitud":   [-3.703, -3.703, -3.703, -3.702, -3.702, -3.702],
+        "FechaRTC":   pd.date_range(end=ahora, periods=6, freq="3min"),
+        "TipoEvento": ["movement_tracking"] * 6,
+    })
+ 
+    parkings = [
+        OpcionParking("PK-01", "Parking Centro",    (40.415, -3.702), ocupacion=0.75),
+        OpcionParking("PK-02", "Parking Recoletos", (40.418, -3.705), ocupacion=0.98),
+        OpcionParking("PK-03", "Parking Atocha",    (40.412, -3.698), ocupacion=0.50),
+    ]
+ 
+    for escenario in escenarios:
+        print(f"\n{'='*55}")
+        print(f"  ESCENARIO: {escenario['nombre']}")
+        print(f"{'='*55}")
+ 
+        # Predicción de tráfico
+        ts = ahora.replace(hour=escenario["hora"], minute=0)
+        traffic_pred = traffic_predictor.predecir("6798", timestamp=ts)
+ 
+        # Señal NEXTPARK (simulamos el time_to_park del escenario)
+        parking_signal = nextpark_predictor.generar_senal(
+            historial_viaje=historial_viaje,
+            conductor_id="P001",
+            timestamp=ts,
+        )
+        # Override para la demo
+        parking_signal.time_to_park_seg = escenario["time_to_park_override"]
+ 
+        # ETA holístico
+        resultados = engine.calcular_eta(
+            conductor_id="P001",
+            node_id_destino="6798",
+            historial_viaje=historial_viaje,
+            parkings_disponibles=parkings,
+            timestamp=ts,
+        )
+ 
+        if not resultados:
+            print("  Sin opciones viables.")
+            continue
+ 
+        mejor = resultados[0]
+ 
+        # Indicadores UX
+        ux = generar_indicadores_ux(traffic_pred, parking_signal, mejor)
+        print(ux.resumen_usuario())
+ 
+ 
+if __name__ == "__main__":
+    demo_completa()
+ 
+ 
+# Módulo 5: Indicadores de experiencia de usuario avanzados
+ 
+@dataclass
+class AlertaSalidaOptima:
+    """
+    Alerta de salida óptima: informa al usuario si saliendo en X minutos
+    puede evitar tráfico y ahorrar tiempo de conducción.
+ 
+    Basada en la predicción LSTM para distintas franjas horarias.
+    """
+    salir_ahora_min: float          # ETA si sale ahora mismo
+    salir_en_x_min: float           # Minutos de espera recomendados
+    eta_si_espera_min: float        # ETA si espera X minutos
+    ahorro_min: float               # Minutos ahorrados esperando
+    merece_esperar: bool            # True si el ahorro > tiempo de espera
+ 
+    def mensaje(self) -> str:
+        if not self.merece_esperar:
+            return "🚗 Sal ahora, el tráfico no mejorará significativamente."
+        return (
+            f"⏰ Si esperas {self.salir_en_x_min:.0f} min, "
+            f"ahorras {self.ahorro_min:.0f} min de tráfico."
+        )
+ 
+ 
+@dataclass
+class IndicadorAhorroTiempo:
+    """
+    Compara el ETA del parking recomendado frente a las demás opciones
+    y frente a aparcar en calle (estimación).
+    """
+    parking_recomendado: str
+    eta_recomendado_min: float
+    eta_segunda_opcion_min: float
+    ahorro_vs_segunda_min: float
+    ahorro_vs_calle_min: float      # Estimación vs aparcar en calle (~+15 min)
+ 
+    def mensaje(self) -> str:
+        lineas = [f"💡 {self.parking_recomendado} es tu mejor opción."]
+        if self.ahorro_vs_segunda_min > 1:
+            lineas.append(
+                f"   Ahorras {self.ahorro_vs_segunda_min:.0f} min "
+                f"frente al siguiente parking."
+            )
+        if self.ahorro_vs_calle_min > 0:
+            lineas.append(
+                f"   Ahorras ~{self.ahorro_vs_calle_min:.0f} min "
+                f"frente a buscar aparcamiento en calle."
+            )
+        return "\n".join(lineas)
+ 
+ 
+@dataclass
+class SemaforoZonaDestino:
+    """
+    Semáforo de velocidad de la zona de destino basado en el mapa de
+    velocidades máximas inferido sobre la red viaria de la Comunidad de Madrid
+    (proyecto de inferencia de velocidades ETA HOLISTICO).
+ 
+    Permite al conductor anticipar la velocidad máxima en la zona de maniobra.
+    """
+    velocidad_max_kmh: float        # Velocidad máxima de la zona (30/50/70/90...)
+    es_zona_30: bool                # True si es zona de velocidad reducida
+    semaforo: SemaforoParkingColor  # Reutilizamos el semáforo de colores
+ 
+    def mensaje(self) -> str:
+        if self.es_zona_30:
+            return f"🐢 Zona 30 — Reduce la velocidad al llegar."
+        elif self.velocidad_max_kmh <= 50:
+            return f"🚗 Zona urbana — Velocidad máxima {self.velocidad_max_kmh:.0f} km/h."
+        else:
+            return f"🛣️ Vía rápida — Velocidad máxima {self.velocidad_max_kmh:.0f} km/h."
+ 
+ 
+@dataclass
+class AlertaBateria:
+    """
+    Alerta de batería basada en los datos OBD del vehículo.
+    Estima si la batería actual es suficiente para llegar al destino
+    más el parking más cercano disponible.
+ 
+    Requiere acceso a los datos OBD del vehículo (nivel de batería en %).
+    """
+    bateria_actual_pct: float       # % de batería actual (fuente: OBD)
+    autonomia_estimada_km: float    # Autonomía restante estimada (km)
+    distancia_destino_km: float     # Distancia al destino (km)
+    distancia_parking_km: float     # Distancia adicional al parking (km)
+    distancia_total_km: float       # Distancia total necesaria (km)
+    bateria_suficiente: bool        # True si la batería alcanza
+    punto_recarga_cercano: bool     # True si hay recarga cerca del parking
+    margen_bateria_pct: float       # % de batería sobrante tras el trayecto
+ 
+    def semaforo(self) -> SemaforoParkingColor:
+        if self.bateria_suficiente and self.margen_bateria_pct >= 20:
+            return SemaforoParkingColor.VERDE
+        elif self.bateria_suficiente and self.margen_bateria_pct < 20:
+            return SemaforoParkingColor.AMARILLO
+        else:
+            return SemaforoParkingColor.ROJO
+ 
+    def mensaje(self) -> str:
+        if not self.bateria_suficiente:
+            return (
+                f"🔋 ATENCIÓN: Batería insuficiente ({self.bateria_actual_pct:.0f}%). "
+                f"Necesitas recargar antes de llegar."
+            )
+        elif self.margen_bateria_pct < 20:
+            return (
+                f"🔋 Batería justa ({self.bateria_actual_pct:.0f}%). "
+                f"Te quedará un {self.margen_bateria_pct:.0f}% al llegar."
+            )
+        else:
+            return (
+                f"🔋 Batería suficiente ({self.bateria_actual_pct:.0f}%). "
+                f"Margen: {self.margen_bateria_pct:.0f}%."
+            )
+ 
+ 
+@dataclass
+class IndicadorRecargaCercana:
+    """
+    Indica si hay un punto de recarga eléctrica cerca del parking recomendado
+    y estima el tiempo de espera basándose en la ocupación del cargador.
+    """
+    hay_recarga_cercana: bool
+    nombre_punto_recarga: Optional[str] = None
+    distancia_recarga_m: Optional[float] = None
+    tiempo_espera_min: Optional[float] = None       # Estimado por ocupación
+    potencia_kw: Optional[float] = None             # Potencia del cargador (kW)
+    tiempo_carga_30min_min: Optional[float] = None  # Tiempo para cargar 30% (min)
+ 
+    def mensaje(self) -> str:
+        if not self.hay_recarga_cercana:
+            return "⚡ No hay puntos de recarga cercanos al parking recomendado."
+        espera = f", espera estimada: {self.tiempo_espera_min:.0f} min" \
+                 if self.tiempo_espera_min is not None else ""
+        recarga = f", {self.tiempo_carga_30min_min:.0f} min para +30%" \
+                  if self.tiempo_carga_30min_min is not None else ""
+        return (
+            f"⚡ {self.nombre_punto_recarga} a {self.distancia_recarga_m:.0f} m "
+            f"({self.potencia_kw:.0f} kW{espera}{recarga})."
+        )
+ 
+ 
+@dataclass
+class IndicadoresUXAvanzados:
+    """
+    Conjunto completo de indicadores UX avanzados.
+    Extiende IndicadoresUX con las funcionalidades adicionales.
+    """
+    # Indicadores base
+    base: IndicadoresUX
+ 
+    # Indicadores avanzados
+    alerta_salida: AlertaSalidaOptima
+    ahorro_tiempo: IndicadorAhorroTiempo
+    zona_destino: SemaforoZonaDestino
+    bateria: AlertaBateria
+    recarga: IndicadorRecargaCercana
+ 
+    def resumen_usuario_completo(self) -> str:
+        """
+        Texto de resumen completo para la app móvil / CarPlay.
+        """
+        lineas = [
+            f"╔══════════════════════════════════════╗",
+            f"  NEXT MOBILITY — Asistente de Ruta",
+            f"══════════════════════════════════════",
+            f"",
+            f"  TRÁFICO          {self.base.semaforo_trafico.value}  ETA conducción incluido",
+            f"  APARCAMIENTO     {self.base.semaforo_parking.value}  {self.base.tiempo_parking_min:.0f} min estimados",
+            f"  BATERÍA          {self.bateria.semaforo().value}  {self.bateria.mensaje()}",
+            f"  ZONA DESTINO     {self.zona_destino.semaforo.value}  {self.zona_destino.mensaje()}",
+            f"  CONFIANZA        {self.base.confianza_prediccion.value}  Predicción {self.base._confianza_texto()}",
+            f"",
+            f"  ─────────────────────────────────────",
+            f"  📍 Recomendado:  {self.base.parking_recomendado}",
+            f"  🅿️  Ocupación:    {self.base.parking_ocupacion_pct:.0f}%",
+            f"  🚶 A pie:        {self.base.distancia_caminata_m:.0f} m hasta tu destino",
+            f"  ⏱️  ETA total:    {self.base.eta_total_min:.0f} min",
+            f"",
+            f"  ─────────────────────────────────────",
+            f"  {self.alerta_salida.mensaje()}",
+            f"  {self.ahorro_tiempo.mensaje()}",
+            f"  {self.recarga.mensaje()}",
+        ]
+ 
+        if self.base.zona_frecuente:
+            lineas.append(f"  ℹ️  Zona habitual detectada")
+ 
+        lineas.append(f"╚══════════════════════════════════════╝")
+        return "\n".join(lineas)
+ 
+ 
+# Funciones de cálculo de indicadores avanzados
+ 
+def calcular_alerta_salida_optima(
+    traffic_predictor: TrafficPredictor,
+    node_id: str,
+    timestamp: datetime,
+    intervalos_min: list[int] = [15, 30, 45],
+) -> AlertaSalidaOptima:
+    """
+    Calcula la alerta de salida óptima comparando el ETA actual con el ETA
+    si el usuario espera 15, 30 o 45 minutos.
+ 
+    Args:
+        traffic_predictor: Instancia del predictor de tráfico.
+        node_id: Nodo de destino.
+        timestamp: Momento actual.
+        intervalos_min: Intervalos de espera a evaluar (minutos).
+ 
+    Returns:
+        AlertaSalidaOptima con el intervalo óptimo de espera.
+    """
+    pred_ahora = traffic_predictor.predecir(node_id, timestamp=timestamp)
+    eta_ahora = pred_ahora.travel_time_min
+ 
+    mejor_ahorro = 0.0
+    mejor_espera = 0
+    mejor_eta = eta_ahora
+ 
+    for espera in intervalos_min:
+        ts_futuro = timestamp.replace(
+            hour=(timestamp.hour + (timestamp.minute + espera) // 60) % 24,
+            minute=(timestamp.minute + espera) % 60,
+        )
+        pred_futuro = traffic_predictor.predecir(node_id, timestamp=ts_futuro)
+        ahorro = eta_ahora - pred_futuro.travel_time_min
+ 
+        # Solo merece esperar si el ahorro es mayor que el tiempo de espera
+        if ahorro > espera and ahorro > mejor_ahorro:
+            mejor_ahorro = ahorro
+            mejor_espera = espera
+            mejor_eta = pred_futuro.travel_time_min
+ 
+    merece_esperar = mejor_espera > 0 and mejor_ahorro > mejor_espera
+ 
+    return AlertaSalidaOptima(
+        salir_ahora_min=eta_ahora,
+        salir_en_x_min=float(mejor_espera),
+        eta_si_espera_min=mejor_eta,
+        ahorro_min=mejor_ahorro,
+        merece_esperar=merece_esperar,
+    )
+ 
+ 
+def calcular_ahorro_tiempo(
+    resultados: list[ETAHolistico],
+    tiempo_calle_extra_min: float = 15.0,
+) -> IndicadorAhorroTiempo:
+    """
+    Calcula el ahorro de tiempo del parking recomendado frente a otras opciones
+    y frente a aparcar en calle.
+ 
+    Args:
+        resultados: Lista de ETAHolistico ordenada por tiempo ascendente.
+        tiempo_calle_extra_min: Tiempo extra estimado para aparcar en calle (min).
+ 
+    Returns:
+        IndicadorAhorroTiempo con el ahorro calculado.
+    """
+    if not resultados:
+        return IndicadorAhorroTiempo(
+            parking_recomendado="N/A",
+            eta_recomendado_min=0.0,
+            eta_segunda_opcion_min=0.0,
+            ahorro_vs_segunda_min=0.0,
+            ahorro_vs_calle_min=0.0,
+        )
+ 
+    mejor = resultados[0]
+    segunda = resultados[1] if len(resultados) > 1 else None
+    eta_segunda = segunda.eta_total_min if segunda else mejor.eta_total_min
+    eta_calle = mejor.t_conduccion_min + tiempo_calle_extra_min
+ 
+    return IndicadorAhorroTiempo(
+        parking_recomendado=mejor.parking_nombre,
+        eta_recomendado_min=mejor.eta_total_min,
+        eta_segunda_opcion_min=eta_segunda,
+        ahorro_vs_segunda_min=max(0.0, eta_segunda - mejor.eta_total_min),
+        ahorro_vs_calle_min=max(0.0, eta_calle - mejor.eta_total_min),
+    )
+ 
+ 
+def calcular_semaforo_zona_destino(
+    velocidad_max_kmh: float,
+) -> SemaforoZonaDestino:
+    """
+    Calcula el semáforo de zona de destino a partir de la velocidad máxima
+    inferida por el mapa de velocidades del proyecto ETA HOLISTICO.
+ 
+    Args:
+        velocidad_max_kmh: Velocidad máxima del tramo de destino (km/h).
+                           Obtenida del dataset GeoJSON de velocidades.
+ 
+    Returns:
+        SemaforoZonaDestino con el color y mensaje correspondientes.
+    """
+    es_zona_30 = velocidad_max_kmh <= 30
+ 
+    if velocidad_max_kmh <= 30:
+        color = SemaforoParkingColor.ROJO
+    elif velocidad_max_kmh <= 50:
+        color = SemaforoParkingColor.AMARILLO
+    else:
+        color = SemaforoParkingColor.VERDE
+ 
+    return SemaforoZonaDestino(
+        velocidad_max_kmh=velocidad_max_kmh,
+        es_zona_30=es_zona_30,
+        semaforo=color,
+    )
+ 
+ 
+def calcular_alerta_bateria(
+    bateria_actual_pct: float,
+    distancia_destino_km: float,
+    distancia_parking_km: float,
+    autonomia_total_km: float = 400.0,
+    hay_recarga_cercana: bool = False,
+) -> AlertaBateria:
+    """
+    Calcula la alerta de batería estimando si la autonomía restante es
+    suficiente para llegar al destino más el parking.
+ 
+    Args:
+        bateria_actual_pct: % de batería actual (fuente: OBD).
+        distancia_destino_km: Distancia al destino en km.
+        distancia_parking_km: Distancia adicional al parking en km.
+        autonomia_total_km: Autonomía total del vehículo al 100% (km).
+        hay_recarga_cercana: True si hay un cargador cerca del parking.
+ 
+    Returns:
+        AlertaBateria con el estado de la batería y el semáforo.
+    """
+    autonomia_restante = autonomia_total_km * (bateria_actual_pct / 100)
+    distancia_total = distancia_destino_km + distancia_parking_km
+    bateria_suficiente = autonomia_restante >= distancia_total
+ 
+    # Batería residual tras el trayecto
+    bateria_residual_km = autonomia_restante - distancia_total
+    margen_pct = max(0.0, (bateria_residual_km / autonomia_total_km) * 100)
+ 
+    return AlertaBateria(
+        bateria_actual_pct=bateria_actual_pct,
+        autonomia_estimada_km=autonomia_restante,
+        distancia_destino_km=distancia_destino_km,
+        distancia_parking_km=distancia_parking_km,
+        distancia_total_km=distancia_total,
+        bateria_suficiente=bateria_suficiente,
+        punto_recarga_cercano=hay_recarga_cercana,
+        margen_bateria_pct=margen_pct,
+    )
+ 
+ 
+def calcular_indicador_recarga(
+    parking_coords: tuple[float, float],
+    puntos_recarga: list[dict],
+    radio_busqueda_m: float = 300.0,
+) -> IndicadorRecargaCercana:
+    """
+    Busca el punto de recarga más cercano al parking recomendado.
+ 
+    Args:
+        parking_coords: (lat, lon) del parking recomendado.
+        puntos_recarga: Lista de puntos de recarga con campos:
+                        nombre, coords (lat, lon), potencia_kw, ocupacion (0-1).
+        radio_busqueda_m: Radio de búsqueda en metros.
+ 
+    Returns:
+        IndicadorRecargaCercana con el punto más cercano (si existe).
+    """
+    candidatos = []
+    for punto in puntos_recarga:
+        dist_m = geodesic(parking_coords, punto["coords"]).meters
+        if dist_m <= radio_busqueda_m:
+            candidatos.append({**punto, "distancia_m": dist_m})
+ 
+    if not candidatos:
+        return IndicadorRecargaCercana(hay_recarga_cercana=False)
+ 
+    # Seleccionar el más cercano con menor ocupación
+    candidatos.sort(key=lambda x: (x["distancia_m"], x.get("ocupacion", 0)))
+    mejor = candidatos[0]
+ 
+    # Estimar tiempo de espera basado en ocupación
+    ocupacion = mejor.get("ocupacion", 0.0)
+    tiempo_espera = 0.0 if ocupacion < 0.5 else (10.0 if ocupacion < 0.8 else 20.0)
+ 
+    # Estimar tiempo para cargar 30% a la potencia del cargador
+    # Batería media VEC: 75 kWh → 30% = 22.5 kWh
+    potencia = mejor.get("potencia_kw", 22.0)
+    tiempo_carga_30 = (22.5 / potencia) * 60  # minutos
+ 
+    return IndicadorRecargaCercana(
+        hay_recarga_cercana=True,
+        nombre_punto_recarga=mejor["nombre"],
+        distancia_recarga_m=mejor["distancia_m"],
+        tiempo_espera_min=tiempo_espera,
+        potencia_kw=potencia,
+        tiempo_carga_30min_min=tiempo_carga_30,
+    )
+ 
+ 
+def generar_indicadores_ux_avanzados(
+    traffic_predictor: TrafficPredictor,
+    traffic_pred: TrafficPrediction,
+    parking_signal: ParkingSignal,
+    resultados: list[ETAHolistico],
+    velocidad_max_zona_kmh: float,
+    bateria_actual_pct: float,
+    distancia_destino_km: float,
+    puntos_recarga: list[dict],
+    timestamp: Optional[datetime] = None,
+) -> IndicadoresUXAvanzados:
+    """
+    Genera el conjunto completo de indicadores UX avanzados.
+ 
+    Args:
+        traffic_predictor: Instancia del predictor de tráfico.
+        traffic_pred: Predicción de tráfico ya calculada.
+        parking_signal: Señal de aparcamiento NEXTPARK.
+        resultados: Lista de ETAHolistico ordenada por tiempo.
+        velocidad_max_zona_kmh: Velocidad máxima de la zona de destino.
+        bateria_actual_pct: % de batería actual (OBD).
+        distancia_destino_km: Distancia al destino en km.
+        puntos_recarga: Lista de puntos de recarga cercanos.
+        timestamp: Momento del cálculo.
+ 
+    Returns:
+        IndicadoresUXAvanzados con todos los indicadores calculados.
+    """
+    if timestamp is None:
+        timestamp = datetime.now()
+ 
+    mejor = resultados[0]
+ 
+    # Indicadores base
+    base = generar_indicadores_ux(traffic_pred, parking_signal, mejor)
+ 
+    # Alerta de salida óptima
+    alerta_salida = calcular_alerta_salida_optima(
+        traffic_predictor, traffic_pred.node_id, timestamp
+    )
+ 
+    # Ahorro de tiempo
+    ahorro = calcular_ahorro_tiempo(resultados)
+ 
+    # Semáforo zona destino
+    zona = calcular_semaforo_zona_destino(velocidad_max_zona_kmh)
+ 
+    # Alerta batería
+    dist_parking_km = mejor.distancia_caminata_m / 1000
+    bateria = calcular_alerta_bateria(
+        bateria_actual_pct=bateria_actual_pct,
+        distancia_destino_km=distancia_destino_km,
+        distancia_parking_km=dist_parking_km,
+        hay_recarga_cercana=len(puntos_recarga) > 0,
+    )
+ 
+    # Indicador recarga
+    recarga = calcular_indicador_recarga(mejor.parking_coords, puntos_recarga)
+ 
+    return IndicadoresUXAvanzados(
+        base=base,
+        alerta_salida=alerta_salida,
+        ahorro_tiempo=ahorro,
+        zona_destino=zona,
+        bateria=bateria,
+        recarga=recarga,
+    )
+ 
+ 
+# Demo completa con indicadores UX avanzados
+ 
+def demo_avanzada():
+    """
+    Demo completa con todos los indicadores UX avanzados.
+    Simula tres escenarios: hora valle, hora punta y zona saturada.
+    """
+    traffic_predictor  = TrafficPredictor(model_path=None)
+    nextpark_predictor = NextParkPredictor(pf_folder="./pf")
+    engine = ETAEngine(
+        traffic_predictor=traffic_predictor,
+        nextpark_predictor=nextpark_predictor,
+    )
+ 
+    # Puntos de recarga cercanos al área de destino
+    puntos_recarga = [
+        {
+            "nombre": "Recarga Centro Comercial",
+            "coords": (40.414, -3.701),
+            "potencia_kw": 22.0,
+            "ocupacion": 0.3,
+        },
+        {
+            "nombre": "Recarga Parking Atocha",
+            "coords": (40.411, -3.697),
+            "potencia_kw": 50.0,
+            "ocupacion": 0.7,
+        },
+    ]
+ 
+    escenarios = [
+        {
+            "nombre": "HORA VALLE (10:15h)",
+            "hora": 10,
+            "time_to_park_override": 412,    # ~7 min → VERDE
+            "bateria_pct": 75.0,
+            "velocidad_zona": 30.0,
+        },
+        {
+            "nombre": "HORA PUNTA (08:30h)",
+            "hora": 8,
+            "time_to_park_override": 1020,   # ~17 min → AMARILLO
+            "bateria_pct": 25.0,
+            "velocidad_zona": 50.0,
+        },
+        {
+            "nombre": "ZONA SATURADA (19:00h)",
+            "hora": 19,
+            "time_to_park_override": 2100,   # ~35 min → ROJO
+            "bateria_pct": 60.0,
+            "velocidad_zona": 70.0,
+        },
+    ]
+ 
+    ahora = datetime.now()
+    historial_viaje = pd.DataFrame({
+        "IdCliente":  ["P001"] * 6,
+        "Latitud":    [40.418, 40.417, 40.416, 40.416, 40.415, 40.415],
+        "Longitud":   [-3.703, -3.703, -3.703, -3.702, -3.702, -3.702],
+        "FechaRTC":   pd.date_range(end=ahora, periods=6, freq="3min"),
+        "TipoEvento": ["movement_tracking"] * 6,
+    })
+ 
+    parkings = [
+        OpcionParking("PK-01", "Parking Centro",    (40.415, -3.702), ocupacion=0.75),
+        OpcionParking("PK-02", "Parking Recoletos", (40.418, -3.705), ocupacion=0.98),
+        OpcionParking("PK-03", "Parking Atocha",    (40.412, -3.698), ocupacion=0.50),
+    ]
+ 
+    for escenario in escenarios:
+        print(f"\n{'='*55}")
+        print(f"  ESCENARIO: {escenario['nombre']}")
+        print(f"{'='*55}")
+ 
+        ts = ahora.replace(hour=escenario["hora"], minute=0)
+ 
+        # Predicción de tráfico
+        traffic_pred = traffic_predictor.predecir("6798", timestamp=ts)
+ 
+        # Señal NEXTPARK
+        parking_signal = nextpark_predictor.generar_senal(
+            historial_viaje=historial_viaje,
+            conductor_id="P001",
+            timestamp=ts,
+        )
+        parking_signal.time_to_park_seg = escenario["time_to_park_override"]
+ 
+        # ETA holístico
+        resultados = engine.calcular_eta(
+            conductor_id="P001",
+            node_id_destino="6798",
+            historial_viaje=historial_viaje,
+            parkings_disponibles=parkings,
+            timestamp=ts,
+        )
+ 
+        if not resultados:
+            print("  Sin opciones viables.")
+            continue
+ 
+        # Indicadores UX avanzados
+        ux = generar_indicadores_ux_avanzados(
+            traffic_predictor=traffic_predictor,
+            traffic_pred=traffic_pred,
+            parking_signal=parking_signal,
+            resultados=resultados,
+            velocidad_max_zona_kmh=escenario["velocidad_zona"],
+            bateria_actual_pct=escenario["bateria_pct"],
+            distancia_destino_km=5.0,
+            puntos_recarga=puntos_recarga,
+            timestamp=ts,
+        )
+ 
+        print(ux.resumen_usuario_completo())
+ 
+ 
+if __name__ == "__main__":
+    demo_avanzada()
